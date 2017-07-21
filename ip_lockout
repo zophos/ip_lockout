@@ -2,7 +2,7 @@
 #
 # Detect break-in attemption and block them
 #
-# Time-stamp: <2017-07-22 00:02:41 zophos>
+# Time-stamp: <2017-07-22 04:44:11 zophos>
 #
 # USAGE:
 #   ip_lockout
@@ -250,7 +250,8 @@ class Blocker
                  else
                      x
                  end
-            @groups[addr.mask(AGGREGATE_MASK)]
+            p_addr=addr.mask(AGGREGATE_MASK)
+            @groups[p_addr] unless addr==p_addr
         end
 
         def descript(port=$stdout)
@@ -312,7 +313,7 @@ class Blocker
             @status==:expired
         end
 
-        def extend(h)
+        def reblock(h)
             @updated=@@now
             @last=h.last
             if(@status==:expired)
@@ -372,15 +373,16 @@ class Blocker
             if(g &&
                g.last>r.last &&
                g.count>HALF_THRESHOLD)
-               g.count+=if(r.expire?)
-                            r.count/2
-                        else
-                            r.count
-                        end
+                c=if(r.expire?)
+                      r.count/2
+                  else
+                      r.count
+                  end
+                g.count_up(r.last,c)
                 r.force_expire
             elsif(h)
-                r.extend(h) if(h.last>r.last &&
-                               h.count>HALF_THRESHOLD)
+                r.reblock(h) if(h.last>r.last &&
+                    h.count>HALF_THRESHOLD)
                 @countor.delete(h)
             end
         }
@@ -392,7 +394,7 @@ class Blocker
                 h
             else
                 g=@countor.parent(h)
-                if(g && h.count*1.5<g.count)
+                if(g && h.count*AGGREGATE_THRESHOLD<g.count)
                     g
                 else
                     h
