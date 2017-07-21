@@ -2,7 +2,7 @@
 #
 # Detect break-in attemption and block them
 #
-# Time-stamp: <2017-07-22 04:44:11 zophos>
+# Time-stamp: <2017-07-22 05:27:59 zophos>
 #
 # USAGE:
 #   ip_lockout
@@ -427,7 +427,7 @@ class Blocker
                     buf.push(['I',r])
                 end
                 nil
-            when :force_expired
+            when :force_expire
                 buf.push(['D',r])
             when :expired
                 r.updated<@ignore_before
