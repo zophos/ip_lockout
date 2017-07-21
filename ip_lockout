@@ -1,0 +1,561 @@
+#!/usr/bin/ruby
+#
+# Detect break-in attemption and block them
+#
+# Time-stamp: <2017-07-22 00:02:41 zophos>
+#
+# USAGE:
+#   ip_lockout
+#      or
+#   check-ip_lockout
+#
+# NOTE:
+#   This script requires root privilege to read logs and exec iptables.
+#
+require 'time'
+require 'ipaddr'
+
+DB='/var/lib/ip_lockout/lockout.db'
+
+INSPECT_SPAN= 86400  # 24h
+LOCKOUT_SPAN= 28800  # 8h
+
+NUM_THRESHOLD=8
+
+WHITE_LIST=[
+    '127.0.0.1', # host
+    '10.0.0.0/8' # with netmask
+].map{|a|
+  IPAddr.new(a)
+}
+
+
+IPTABLES='/sbin/iptables'
+IPTABLES_TARGET='REJECT'
+IPTABLES_PROT='all'
+
+HALF_THRESHOLD=
+    NUM_THRESHOLD>2 ? NUM_THRESHOLD/2 : 1
+
+AGGREGATE_THRESHOLD=1.25
+
+
+#
+#  monkey-patch for CIDR mask
+#
+# from https://stackoverflow.com/questions/41604782/ruby-ipaddr-find-address-mask
+#
+class IPAddr
+    def cidr_mask
+        case (@family)
+        when Socket::AF_INET
+            32-Math.log2((1<<32)-@mask_addr).to_i #
+
+        when Socket::AF_INET6
+            128-Math.log2((1<<128)-@mask_addr).to_i #
+
+        else
+            raise AddressFamilyError, "unsupported address family"
+        end
+    end
+
+    def to_s_with_mask(always_with_mask=nil)
+        mask=self.cidr_mask
+        if(always_with_mask ||
+           (@family==Socket::AF_INET && mask<32) ||
+           (@family==Socket::AF_INET6 && mask<128))
+            "#{self.to_s}/#{self.cidr_mask}"
+        else
+            self.to_s
+        end
+    end
+end
+
+class Blocker
+    class Countor
+        AGGREGATE_MASK=24
+
+        #
+        # Countor item for each IP address
+        #
+        class Host
+            TIME_ORIGIN=Time.at(0)
+            def initialize(addr,last=TIME_ORIGIN,count=0)
+                @addr=addr
+                @last=last
+                @count=count
+                @srcs=[]
+            end
+            attr_reader :addr,:last,:count,:srcs
+
+            def count_up(last,count=1)
+                @last=last if @last<last
+                @count+=count
+            end
+
+            def add_src(src)
+                @srcs.push(src)
+                @srcs.uniq!
+                @srcs.compact!
+            end
+
+            def select
+                yield(self)
+            end
+
+            def descript(port=$stdout)
+                bullet=if(@count>=NUM_THRESHOLD)
+                           '> '
+                       else
+                           '  '
+                       end
+                port<< "#{bullet}#{@addr.to_s_with_mask}: #{@last.to_s} (#{@count} #{@srcs.inspect})\n"
+            end
+        end
+        #
+        # end of Blocker::Countor::Group
+        #
+
+        #
+        # Aggregated item for each net-mask
+        #
+        class Group<Host
+            def initialize(host,mask)
+                super(host.addr.mask(mask))
+                @mask=mask
+                @children=[]
+            end
+            attr_reader :mask,:children
+
+            def push_child(host)
+                return nil unless @addr.include?(host.addr)
+
+                @children.push(host)
+                self.count_up(host.last,host.count)
+
+                @srcs+=host.srcs
+                @srcs.sort!
+                @srcs.uniq!
+                @srcs.compact!
+
+                self
+            end
+            def remove_child(host)
+                return nil unless @addr.include?(host.addr)
+
+                if(@children.delete(host))
+                    @count-=host.count
+                end
+                host
+            end
+
+            def select(&block)
+                raise 'no block given' unless block
+
+                s=@children.select{|c|
+                    c.select(&block)
+                }
+                case s.size
+                when 0
+                    self if yield(self)
+                when 1
+                    s[0]
+                else
+                    self
+                end
+            end
+
+            def descript(port=$stdout)
+                bullet=''
+                if(@children.size>1)
+                    bullet='    '
+                    super
+                end
+                @children.sort_by{|a| a.last }.each{|c|
+                    port<< bullet
+                    c.descript(port)
+                }
+            end
+        end
+        #
+        # end of Blocker::Countor::Group
+        #
+
+        #
+        # Blocker::Countor
+        #
+        def initialize
+            @hosts={}
+            @groups={}
+        end
+        def reg(a,t,src=nil)
+            @hosts[a]||=Host.new(a)
+            @hosts[a].count_up(t)
+            @hosts[a].add_src(src)
+        end
+        def aggregate
+            @groups={}
+            @hosts.values.each{|h|
+                addr=h.addr.mask(AGGREGATE_MASK)
+                @groups[addr]||=
+                    Group.new(h,AGGREGATE_MASK)
+                @groups[addr].push_child(h)
+            }
+
+            @groups
+        end
+        def select(force_aggregate=nil,&block)
+            raise 'no block given' unless block
+
+            self.aggregate if force_aggregate || @groups.empty?
+
+            @groups.values.map{|g|
+                g.select(&block)
+            }.compact
+        end
+
+        def [](x)
+            addr=if(x.respond_to?(:addr))
+                     x.addr
+                 else
+                     x
+                 end
+            @groups[addr]||@hosts[addr]
+        end
+        def delete(x)
+            addr=if(x.respond_to?(:addr))
+                     x.addr
+                 else
+                     x
+                 end
+            if(@groups[addr])
+                @groups[addr].children.each{|h|
+                    @hosts.delete(h)
+                }
+                @groups.delete(addr)
+            else
+                h=@hosts.delete(addr)
+                g=self.parent(h)
+                if(g.children.size<=1)
+                    @groups.delete(g.addr)
+                else
+                    g.remove_child(h)
+                end
+            end
+        end
+
+        def parent(x)
+            addr=if(x.respond_to?(:addr))
+                     x.addr
+                 else
+                     x
+                 end
+            @groups[addr.mask(AGGREGATE_MASK)]
+        end
+
+        def descript(port=$stdout)
+            @groups.values.sort_by{|v| v.last}.each{|v|
+                v.descript(port)
+            }
+        end
+    end
+    #
+    # end of Blocker::Countor
+    #
+
+    #
+    # DB entries
+    #
+    class Entry<Countor::Host
+        @@now=Time.now
+        def self.now=(x)
+            @@now=x
+        end
+        def initialize(addr,
+                       last=TIME_ORIGIN,
+                       count=0,
+                       status=:new,
+                       remain=nil,
+                       updated=nil)
+            super(addr,last,count)
+            @status=status
+            @remain=remain||@count
+            @updated=updated||@@now
+        end
+        attr_reader :status,:remain,:updated
+
+        def begin_block
+            @status=:blocked
+            @remain=@count
+            @updated=@@now
+            self
+        end
+
+        def count_down(c)
+            @updated=@@now
+            @remain-=c
+            if(@remain<=0)
+                @remain=0
+                @status=:expired
+                self
+            else
+                nil
+            end
+        end
+
+        def force_expire
+            @updated=@@now
+            @status=:force_expire
+        end
+
+        def expire?
+            @status==:expired
+        end
+
+        def extend(h)
+            @updated=@@now
+            @last=h.last
+            if(@status==:expired)
+                @count=h.count+@count/2
+                @status=:new
+            else
+                @count+=h.count
+                @remain=@count
+            end
+            self
+        end
+
+        def descript(port=$stdout)
+            port<< "#{@addr.to_s_with_mask}: #{@last.to_s} (#{@count})\n"
+            port<< "  [#{@status} (remain: #{remain}) #{@updated}]\n"
+        end
+    end
+    #
+    # end of Blocker::Entry
+    #
+
+    def initialize
+        @now=Time.now
+        Entry.now=@now
+
+        @countor=Countor.new
+
+        @ignore_before=@now-INSPECT_SPAN
+        @expire_at=@now-LOCKOUT_SPAN
+
+        @records=[]
+        if(File.exist?(DB))
+            File.open(DB){|f|
+                f.flock(File::LOCK_EX)
+                @records=Marshal.load(f.read)
+            }
+        end
+
+        @iptables=[]
+        _read_iptables
+    end
+
+    def reg(addr,timestamp,src=nil)
+        a=IPAddr.new(addr)
+        t=Time.parse(timestamp)
+
+        return if WHITE_LIST.find{|w| w.include?(a) }
+
+        @countor.reg(a,t,src) if @ignore_before<t
+    end
+
+    def update
+        @countor.aggregate
+        @records.each{|r|
+            g=@countor.parent(r)
+            h=@countor[r]
+            if(g &&
+               g.last>r.last &&
+               g.count>HALF_THRESHOLD)
+               g.count+=if(r.expire?)
+                            r.count/2
+                        else
+                            r.count
+                        end
+                r.force_expire
+            elsif(h)
+                r.extend(h) if(h.last>r.last &&
+                               h.count>HALF_THRESHOLD)
+                @countor.delete(h)
+            end
+        }
+
+        @countor.select{|h|
+            h.count>NUM_THRESHOLD
+        }.map{|h|
+            if(h.respond_to?(:children))
+                h
+            else
+                g=@countor.parent(h)
+                if(g && h.count*1.5<g.count)
+                    g
+                else
+                    h
+                end
+            end
+        }.uniq.each{|h|
+            @records.push(Entry.new(h.addr,h.last,h.count))
+        }
+    end
+
+    def run(port=nil)
+        self.update
+
+        buf=[]
+        @records.delete_if{|r|
+            case r.status
+            when :new
+                r.begin_block
+                buf.push(['I',r])
+                nil
+            when :blocked
+                if(@expire_at>r.updated)
+                    r.count_down(NUM_THRESHOLD)
+
+                    if(r.expire? &&
+                       @iptables.find{|e| e.addr.include?(r.addr) })
+                        buf.push(['D',r])
+                    end
+                elsif(!@iptables.find{|e| e.addr.include?(r.addr) })
+                    buf.push(['I',r])
+                end
+                nil
+            when :force_expired
+                buf.push(['D',r])
+            when :expired
+                r.updated<@ignore_before
+            end
+        }
+
+        #
+        # store DB if NOT dry-run
+        #
+        unless(port)
+            File.open(DB,'w'){|f|
+                f.flock(File::LOCK_EX)
+                f<< Marshal.dump(@records)
+            }
+        end
+
+        buf.each{|(op,rec)|
+            addr=rec.addr.to_s_with_mask
+
+            if(op=='I')
+                $stderr<< "#{@now.to_s} blocking #{addr}. (#{rec.count})\n"
+            end
+            _exec_iptables(op,addr,port)
+        }
+    end
+
+    def descript(port=$stdout)
+        port<< "DB:\n"
+        @records.each{|r|
+            r.descript(port)
+        }
+        port<< "\n"
+
+        @countor.aggregate
+        port<< "LOG:\n"
+        @countor.descript(port)
+        port<< "\n"
+
+        self.run(port)
+
+        port<< "----\n"
+        @records.each{|r|
+            r.descript(port)
+        }
+        port<< "\n\n"
+    end
+
+    private
+    def _read_iptables
+        @iptables.clear
+
+        IO.popen([IPTABLES,'-L','INPUT','-n']){|io|
+            io.each{|line|
+                (target,prot,opt,src,dst,)=line.strip.split(/\s+/,6)
+                if(target==IPTABLES_TARGET && prot==IPTABLES_PROT)
+                    @iptables.push(Entry.new(IPAddr.new(src)))
+                end
+            }
+        }
+    end
+
+    def _exec_iptables(op,addr,port=nil)
+        cmd=[IPTABLES,
+             "-#{op}",
+             'INPUT',
+             '-s',
+             addr,
+             '-j',
+             IPTABLES_TARGET]
+        if(port)
+            port<< cmd.join(' ')<< "\n"
+        else
+            IO.popen(cmd,'r'){|io|
+                $stderr<< io.read
+            }
+        end
+    end
+end
+
+
+blocker=Blocker.new
+
+#
+# detection that break-in attempt to sshd
+#
+AUTH_LOG='/var/log/auth.log'
+File.foreach(AUTH_LOG){|line|
+    if(line=~/sshd\[\d+\]: Invalid user [a-z_][a-z0-9_]{0,30}\s+from\s+(\d{,3}\.\d{,3}\.\d{,3}\.\d{,3})/)
+        addr=$1
+        timestamp=line.strip.split(/\s+/)[0..2].join(' ')
+
+        blocker.reg(addr,timestamp,:ssh)
+    end
+}
+
+=begin
+#
+# detection that break-in attemp to Postfix SMTP-AUTH and dovecot
+#
+MAIL_LOG='/var/log/mail.log'
+File.foreach(MAIL_LOG){|line|
+    if(line=~/\[(\d{,3}\.\d{,3}\.\d{,3}\.\d{,3})\]: SASL LOGIN authentication failed/)
+        #
+        # Postfix SMTP-AUTH
+        #
+        addr=$1
+        timestamp=line.strip.split(/\s+/)[0..2].join(' ')
+
+        blocker.reg(addr,timestamp,:smtp_auth)
+    elsif(line=~/imap-login: Disconnected \(no auth attempts/)
+        #
+        # dovecot
+        #
+        line=~/rip=(\d{,3}\.\d{,3}\.\d{,3}\.\d{,3})/
+        addr=$1
+        timestamp=line.strip.split(/\s+/)[0..2].join(' ')
+
+        blocker.reg(addr,timestamp,:imap)
+    end
+}
+=end
+
+if(ARGV[0]=~/^-d/ || File.basename($0)=~/^check-/)
+    #
+    # dry-run
+    #
+    blocker.descript
+else
+    #
+    # exec iptables
+    #
+    blocker.run
+end

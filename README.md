@@ -1,2 +1,4 @@
 # ip_lockout
-Automatic abused host block script using iptables
+Script for detecting break-in attemption and automatic blocking
+
+NISHI, Takao <zophos@koka-in.org>
