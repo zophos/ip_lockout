@@ -2,7 +2,7 @@
 #
 # Detect break-in attemption and block them
 #
-# Time-stamp: <2017-07-22 05:27:59 zophos>
+# Time-stamp: <2017-07-22 06:07:46 zophos>
 #
 # USAGE:
 #   ip_lockout
@@ -33,11 +33,6 @@ WHITE_LIST=[
 IPTABLES='/sbin/iptables'
 IPTABLES_TARGET='REJECT'
 IPTABLES_PROT='all'
-
-HALF_THRESHOLD=
-    NUM_THRESHOLD>2 ? NUM_THRESHOLD/2 : 1
-
-AGGREGATE_THRESHOLD=1.25
 
 
 #
@@ -113,24 +108,24 @@ class Blocker
             end
         end
         #
-        # end of Blocker::Countor::Group
+        # end of Blocker::Countor::Host
         #
 
         #
-        # Aggregated item for each net-mask
+        # Aggregated item for each subnet
         #
-        class Group<Host
+        class Subnet<Host
             def initialize(host,mask)
                 super(host.addr.mask(mask))
                 @mask=mask
-                @children=[]
+                @hosts=[]
             end
-            attr_reader :mask,:children
+            attr_reader :mask,:hosts
 
             def push_child(host)
                 return nil unless @addr.include?(host.addr)
 
-                @children.push(host)
+                @hosts.push(host)
                 self.count_up(host.last,host.count)
 
                 @srcs+=host.srcs
@@ -140,10 +135,10 @@ class Blocker
 
                 self
             end
-            def remove_child(host)
+            def remove_host(host)
                 return nil unless @addr.include?(host.addr)
 
-                if(@children.delete(host))
+                if(@hosts.delete(host))
                     @count-=host.count
                 end
                 host
@@ -152,7 +147,7 @@ class Blocker
             def select(&block)
                 raise 'no block given' unless block
 
-                s=@children.select{|c|
+                s=@hosts.select{|c|
                     c.select(&block)
                 }
                 case s.size
@@ -167,18 +162,18 @@ class Blocker
 
             def descript(port=$stdout)
                 bullet=''
-                if(@children.size>1)
+                if(@hosts.size>1)
                     bullet='    '
                     super
                 end
-                @children.sort_by{|a| a.last }.each{|c|
+                @hosts.sort_by{|a| a.last }.each{|c|
                     port<< bullet
                     c.descript(port)
                 }
             end
         end
         #
-        # end of Blocker::Countor::Group
+        # end of Blocker::Countor::Subnet
         #
 
         #
@@ -186,7 +181,7 @@ class Blocker
         #
         def initialize
             @hosts={}
-            @groups={}
+            @subnets={}
         end
         def reg(a,t,src=nil)
             @hosts[a]||=Host.new(a)
@@ -194,23 +189,23 @@ class Blocker
             @hosts[a].add_src(src)
         end
         def aggregate
-            @groups={}
+            @subnets={}
             @hosts.values.each{|h|
                 addr=h.addr.mask(AGGREGATE_MASK)
-                @groups[addr]||=
-                    Group.new(h,AGGREGATE_MASK)
-                @groups[addr].push_child(h)
+                @subnets[addr]||=
+                    Subnet.new(h,AGGREGATE_MASK)
+                @subnets[addr].push_child(h)
             }
 
-            @groups
+            @subnets
         end
         def select(force_aggregate=nil,&block)
             raise 'no block given' unless block
 
-            self.aggregate if force_aggregate || @groups.empty?
+            self.aggregate if force_aggregate || @subnets.empty?
 
-            @groups.values.map{|g|
-                g.select(&block)
+            @subnets.values.map{|sn|
+                sn.select(&block)
             }.compact
         end
 
@@ -220,7 +215,7 @@ class Blocker
                  else
                      x
                  end
-            @groups[addr]||@hosts[addr]
+            @subnets[addr]||@hosts[addr]
         end
         def delete(x)
             addr=if(x.respond_to?(:addr))
@@ -228,35 +223,35 @@ class Blocker
                  else
                      x
                  end
-            if(@groups[addr])
-                @groups[addr].children.each{|h|
+            if(@subnets[addr])
+                @subnets[addr].hosts.each{|h|
                     @hosts.delete(h)
                 }
-                @groups.delete(addr)
+                @subnets.delete(addr)
             else
                 h=@hosts.delete(addr)
-                g=self.parent(h)
-                if(g.children.size<=1)
-                    @groups.delete(g.addr)
+                sn=self.subnet(h)
+                if(sn.hosts.size<=1)
+                    @subnets.delete(sn.addr)
                 else
-                    g.remove_child(h)
+                    sn.remove_host(h)
                 end
             end
         end
 
-        def parent(x)
+        def subnet(x)
             addr=if(x.respond_to?(:addr))
                      x.addr
                  else
                      x
                  end
             p_addr=addr.mask(AGGREGATE_MASK)
-            @groups[p_addr] unless addr==p_addr
+            @subnets[p_addr] unless addr==p_addr
         end
 
         def descript(port=$stdout)
-            @groups.values.sort_by{|v| v.last}.each{|v|
-                v.descript(port)
+            @subnets.values.sort_by{|sn| sn.last}.each{|sn|
+                sn.descript(port)
             }
         end
     end
@@ -335,6 +330,10 @@ class Blocker
     # end of Blocker::Entry
     #
 
+    HALF_THRESHOLD=
+        NUM_THRESHOLD>2 ? NUM_THRESHOLD/2 : 1
+    REAGGREGATE_THRESHOLD=1.25
+
     def initialize
         @now=Time.now
         Entry.now=@now
@@ -368,17 +367,17 @@ class Blocker
     def update
         @countor.aggregate
         @records.each{|r|
-            g=@countor.parent(r)
+            sn=@countor.subnet(r)
             h=@countor[r]
-            if(g &&
-               g.last>r.last &&
-               g.count>HALF_THRESHOLD)
+            if(sn &&
+               sn.last>r.last &&
+               sn.count>HALF_THRESHOLD)
                 c=if(r.expire?)
                       r.count/2
                   else
                       r.count
                   end
-                g.count_up(r.last,c)
+                sn.count_up(r.last,c)
                 r.force_expire
             elsif(h)
                 r.reblock(h) if(h.last>r.last &&
@@ -390,15 +389,15 @@ class Blocker
         @countor.select{|h|
             h.count>NUM_THRESHOLD
         }.map{|h|
-            if(h.respond_to?(:children))
-                h
+            #
+            # re-aggregate a host that has numerous count with
+            # other hosts those have few count
+            #
+            sn=@countor.subnet(h)
+            if(sn && h.count*REAGGREGATE_THRESHOLD<sn.count)
+                sn
             else
-                g=@countor.parent(h)
-                if(g && h.count*AGGREGATE_THRESHOLD<g.count)
-                    g
-                else
-                    h
-                end
+                h
             end
         }.uniq.each{|h|
             @records.push(Entry.new(h.addr,h.last,h.count))
@@ -523,7 +522,6 @@ File.foreach(AUTH_LOG){|line|
     end
 }
 
-=begin
 #
 # detection that break-in attemp to Postfix SMTP-AUTH and dovecot
 #
@@ -548,7 +546,7 @@ File.foreach(MAIL_LOG){|line|
         blocker.reg(addr,timestamp,:imap)
     end
 }
-=end
+
 
 if(ARGV[0]=~/^-d/ || File.basename($0)=~/^check-/)
     #
