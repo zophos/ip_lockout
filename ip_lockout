@@ -2,7 +2,7 @@
 #
 # Detect break-in attemption and block them
 #
-# Time-stamp: <2017-07-22 12:33:47 zophos>
+# Time-stamp: <2017-07-22 14:21:50 zophos>
 #
 # USAGE:
 #   ip_lockout
@@ -150,7 +150,7 @@ class Blocker
                 @count=count
                 @tags=[]
             end
-            attr_reader :addr,:last,:count,:srcs
+            attr_reader :addr,:last,:count,:tags
 
             def count_up(last,count=1)
                 @last=last if @last<last
@@ -192,13 +192,13 @@ class Blocker
             end
             attr_reader :mask,:hosts
 
-            def push_child(host)
+            def add_host(host)
                 return nil unless @addr.include?(host.addr)
 
                 @hosts.push(host)
                 self.count_up(host.last,host.count)
 
-                @tags+=host.srcs
+                @tags+=host.tags
                 @tags.sort!
                 @tags.uniq!
                 @tags.compact!
@@ -264,7 +264,7 @@ class Blocker
                 addr=h.addr.mask(AGGREGATE_MASK)
                 @subnets[addr]||=
                     Subnet.new(h,AGGREGATE_MASK)
-                @subnets[addr].push_child(h)
+                @subnets[addr].add_host(h)
             }
 
             @subnets
@@ -425,13 +425,13 @@ class Blocker
         _read_iptables
     end
 
-    def reg(addr,timestamp,src=nil)
+    def reg(addr,timestamp,tag=nil)
         a=IPAddr.new(addr)
         t=Time.parse(timestamp)
 
         return if WHITE_LIST.find{|w| w.include?(a) }
 
-        @countor.reg(a,t,src) if @ignore_before<t
+        @countor.reg(a,t,tag) if @ignore_before<t
     end
 
     def update
