@@ -2,7 +2,7 @@
 #
 # Detect break-in attemption and block them
 #
-# Time-stamp: <2017-07-22 07:37:03 zophos>
+# Time-stamp: <2017-07-22 12:33:47 zophos>
 #
 # USAGE:
 #   ip_lockout
@@ -143,11 +143,12 @@ class Blocker
         #
         class Host
             TIME_ORIGIN=Time.at(0)
+
             def initialize(addr,last=TIME_ORIGIN,count=0)
                 @addr=addr
                 @last=last
                 @count=count
-                @srcs=[]
+                @tags=[]
             end
             attr_reader :addr,:last,:count,:srcs
 
@@ -156,10 +157,10 @@ class Blocker
                 @count+=count
             end
 
-            def add_src(src)
-                @srcs.push(src)
-                @srcs.uniq!
-                @srcs.compact!
+            def add_tag(tag)
+                @tags.push(tag)
+                @tags.uniq!
+                @tags.compact!
             end
 
             def select
@@ -172,7 +173,8 @@ class Blocker
                        else
                            '  '
                        end
-                port<< "#{bullet}#{@addr.to_s_with_mask}: #{@last.to_s} (#{@count} #{@srcs.inspect})\n"
+                port<< "#{bullet}#{@addr.to_s_with_mask}: "<<
+                    "#{@last.to_s} (#{@count} #{@tags.inspect})\n"
             end
         end
         #
@@ -196,10 +198,10 @@ class Blocker
                 @hosts.push(host)
                 self.count_up(host.last,host.count)
 
-                @srcs+=host.srcs
-                @srcs.sort!
-                @srcs.uniq!
-                @srcs.compact!
+                @tags+=host.srcs
+                @tags.sort!
+                @tags.uniq!
+                @tags.compact!
 
                 self
             end
@@ -251,10 +253,10 @@ class Blocker
             @hosts={}
             @subnets={}
         end
-        def reg(a,t,src=nil)
+        def reg(a,t,tag=nil)
             @hosts[a]||=Host.new(a)
             @hosts[a].count_up(t)
-            @hosts[a].add_src(src)
+            @hosts[a].add_tag(tag)
         end
         def aggregate
             @subnets={}
@@ -390,8 +392,8 @@ class Blocker
         end
 
         def descript(port=$stdout)
-            port<< "#{@addr.to_s_with_mask}: #{@last.to_s} (#{@count})\n"
-            port<< "  [#{@status} (remain: #{remain}) #{@updated}]\n"
+            port<< "#{@addr.to_s_with_mask}: #{@last.to_s} (#{@count})\n"<<
+                "  [#{@status} (remain: #{remain}) #{@updated}]\n"
         end
     end
     #
@@ -577,6 +579,9 @@ end
 
 blocker=Blocker.new
 
+#
+# inspect each log
+#
 LOGS.each{|log,hooks|
     File.foreach(log){|line|
         hooks.each{|tag,(re,addrhook)|
