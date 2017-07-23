@@ -2,7 +2,7 @@
 #
 # Detect break-in attemption and block them  using iptables
 #
-# Time-stamp: <2017-07-23 13:55:45 zophos>
+# Time-stamp: <2017-07-24 04:41:17 zophos>
 #
 # USAGE:
 #   ip_lockout
@@ -21,12 +21,14 @@ require 'ipaddr'
 # parse command line options
 #
 
-# if commnd name start with 'check-', assume as short-cut for --dry-run
-dry_run=true if File.basename($0)=~/^check-/
+dry_run=nil
+filter_mode=nil
+
 ignore_db=nil
 ignore_iptables_entry=nil
 
 config_file=nil
+
 
 while(opt=ARGV.shift)
     case opt
@@ -38,7 +40,10 @@ Detect break-in attemption and block them using iptables
 USAGE:
   -c [file], --config-file=[file]:
           run with specified config file
-  -d, --dry-run: dry run (not operate iptables and db)
+  -d, --dry-run: don't write db and iptables entry
+
+  -F, --filter-mode: read from STDIN and write to STDOUT
+          force set --ignore-iptables-entry option
 
   --ignore-db-entry: don't read existing lockout.db
   --ignore-iptables-entry: don't read existing iptables entries
@@ -51,14 +56,30 @@ _EOS_
         config_file=ARGV.shift
     when /^--conf/
         config_file=opt.sprit('=',2)[1]
-    when '-d',/^--dry/
+    when '-d', /^--dry/
         dry_run=true
+    when '-F', /^--filter/
+        filter_mode=true
     when /^--ignore-db/
         ignore_db=true
     when /^--ignore-ip/
         ignore_iptables_entry=true
     end
 end
+
+
+#
+# some short-cuts
+#
+case File.basename($0)
+when /^check-/
+    # commnd name start with 'check-', assume as short-cut for --dry-run
+    dry_run=true
+when /^filter-/
+    filter_mode=true
+end
+
+ignore_iptables_entry=true if filter_mode
 
 
 ########################################################################
@@ -443,11 +464,15 @@ class Blocker
 
     def reg(addr,timestamp,tag=nil)
         a=IPAddr.new(addr)
-        t=Time.parse(timestamp)
 
-        return if WHITE_LIST_ADDRS.find{|w| w.include?(a) }
+        if(tag==:__iptables__)
+            @iptables.push(Entry.new(a))
+        else
+            return if WHITE_LIST_ADDRS.find{|w| w.include?(a) }
 
-        @countor.reg(a,t,tag) if @ignore_before<t
+            t=Time.parse(timestamp)
+            @countor.reg(a,t,tag) if @ignore_before<t
+        end
     end
 
     def update
@@ -485,7 +510,7 @@ class Blocker
         }
     end
 
-    def run(port=nil)
+    def run(dry=nil,&block)
         self.update
 
         buf=[]
@@ -517,21 +542,14 @@ class Blocker
         #
         # store DB if NOT dry-run
         #
-        _write_db unless port
+        _write_db unless dry
 
         buf.each{|(op,rec)|
-            addr=rec.addr.to_s_with_mask
-
-            if(defined?(REPORT_IPTABLES_ACTIION) &&
-                    REPORT_IPTABLES_ACTIION)
-                if(op=='I')
-                    $stderr<< "#{@now.to_s}: block #{addr}. (#{rec.count})\n"
-                else
-                    $stderr<< "#{@now.to_s}: #{addr} #{rec.status}\n"
-                end
+            if(block)
+                yield(op,rec,@now)
+            else
+                _exec_iptables(op,rec,@now,dry)
             end
-
-            _exec_iptables(op,addr,port)
         }
     end
 
@@ -547,7 +565,17 @@ class Blocker
         @countor.descript(port)
         port<< "\n"
 
-        self.run(port)
+        self.run(true){|op,rec,timestamp|
+            addr=rec.addr.to_s_with_mask
+
+            $stdout<< [IPTABLES,
+                "-#{op}",
+                'INPUT',
+                '-s',
+                addr,
+                '-j',
+                IPTABLES_TARGET].join(' ')
+        }
 
         port<< "----\n"
         @records.each{|r|
@@ -586,7 +614,9 @@ class Blocker
         }
     end
 
-    def _exec_iptables(op,addr,port=nil)
+    def _exec_iptables(op,rec,timestamp,dry)
+        addr=rec.addr.to_s_with_mask
+
         cmd=[IPTABLES,
              "-#{op}",
              'INPUT',
@@ -594,42 +624,71 @@ class Blocker
              addr,
              '-j',
              IPTABLES_TARGET]
-        if(port)
-            port<< cmd.join(' ')<< "\n"
-        else
-            IO.popen(cmd,'r'){|io|
-                $stderr<< io.read
-            }
+
+        if(defined?(REPORT_IPTABLES_ACTIION) &&
+                REPORT_IPTABLES_ACTIION)
+            $stderr<< "#{timestamp.to_s}: "
+            if(op=='I')
+                $stderr<< "block #{addr}. (#{rec.count})\n"
+            else
+                $stderr<< "#{addr} #{rec.status}\n"
+            end
         end
+
+        IO.popen(cmd,'r'){|io|
+            $stderr<< io.read
+        } unless dry
     end
 end
 
 
 blocker=Blocker.new(ignore_db,ignore_iptables_entry)
 
+if(filter_mode)
+    INSPECTOR['-']||={}
+    INSPECTOR.keys.each{|k|
+        next if k=='-'
+        INSPECTOR['-'].merge!(INSPECTOR[k])
+        INSPECTOR.delete(k)
+    }
+else
+    INSPECTOR.delete('-')
+end
+
 #
 # inspect each log
 #
 INSPECTOR.each{|log_file,hooks|
-    File.foreach(log_file){|line|
+    f=if(log_file=='-')
+          $stdin
+      else
+          File.open(log_file)
+      end
+
+    f.each{|line|
         hooks.each{|tag,(re,addrhook)|
             m=line.match(re)
             if(m)
                 addr=addrhook.call(line,m)
                 if(addr)
-                    timestamp=line.strip.split(/\s+/)[0..2].join(' ')
-                    blocker.reg(addr,timestamp,tag)
+                    blocker.reg(addr,line,tag) # Time#parse will be parse log
                 else
                     warn 'SKIP: could not find IP addr'
                 end
             end
         }
     }
+    f.close unless f==$stdin
 }
 
 
 if(dry_run)
     blocker.descript
+elsif(filter_mode)
+    blocker.run{|op,rec,ts|
+        $stdout<< "#{op} #{rec.addr.to_s_with_mask} "<<
+        "#{rec.status} #{rec.count} #{rec.remain} #{rec.last.to_s} #{ts.to_s}\n"
+    }
 else
     blocker.run
 end

@@ -2,7 +2,7 @@
 #
 # Sample configuration for ip_lockout -- a part of ip_lockout
 #
-# Time-stamp: <2017-07-23 12:32:03 zophos>
+# Time-stamp: <2017-07-24 05:03:58 zophos>
 #
 
 ########################################################################
@@ -79,7 +79,7 @@ NUM_THRESHOLD=8
 # If AGGREGATE_MASK set to 0, ALL HOSTS IN THE WORLD WILL BE BLOCKED.
 #
 #
-# AGGREGATE_MASK=24
+#AGGREGATE_MASK=24
 
 #
 # igore host/subnet list (Array)
@@ -100,7 +100,7 @@ WHITE_LIST=[
 # If true, each iptables action (insert/delete) is reported to STDERR.
 # It's useful for cron mail.
 #
-# REPORT_IPTABLES_ACTIION=true
+#REPORT_IPTABLES_ACTIION=true
 
 
 
@@ -124,12 +124,14 @@ WHITE_LIST=[
 AUTH_LOG='/var/log/auth.log'
 MAIL_LOG='/var/log/mail.log'
 
+STDIN='-' # valid only at filter mode
+
 INSPECTOR={
     #
     # detection that break-in attempt to sshd
     #
-    AUTH_LOG=>{
-        :ssh=>[
+    AUTH_LOG =>{
+        :ssh =>[
             /sshd\[\d+\]: Invalid user [a-z_][a-z0-9_]{0,30}\s+from\s+(\d{,3}\.\d{,3}\.\d{,3}\.\d{,3})/,
             Proc.new{|line,match|
                 match[1]
@@ -140,20 +142,39 @@ INSPECTOR={
     #
     # detection that break-in attemp to Postfix SMTP-AUTH and dovecot
     #
-    MAIL_LOG=>{
-        :smtp_auth=>[
+    MAIL_LOG =>{
+        :smtp_auth =>[
             /\[(\d{,3}\.\d{,3}\.\d{,3}\.\d{,3})\]: SASL LOGIN authentication failed/,
             Proc.new{|line,match|
                 match[1]
             }
         ],
-        :imap=>[
+        :imap =>[
             /imap-login: Disconnected \(no auth attempts/,
             Proc.new{|line,match|
                 m=line.match(/rip=(\d{,3}\.\d{,3}\.\d{,3}\.\d{,3})/)
                 m[1] if m
             }
         ]
+    },
+
+    #
+    # This entry will be ignored in exceptions filter mode
+    #
+    STDIN=>{
+        #
+        # special entry for iptables
+        # The tag ':__iptables__' is reserved for system firewall record.
+        #
+        :__iptables__ =>[
+            /^REJECT\s+[a-zA-Z0-9]+\s+--\s+(\d{,3}\.\d{,3}\.\d{,3}\.\d{,3}(\/\d+)?)/,
+            Proc.new{|line,match|
+                match[1]
+            }
+        ]
+        #
+        # other entries for each log-file will be merged in filter mode
+        #
     }
 }
 
