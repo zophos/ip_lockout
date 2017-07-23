@@ -3,8 +3,6 @@ Script for detecting break-in attemption and automatic blocking
 
 NISHI, Takao <zophos@koka-in.org>
 
-**This script requires root privilege to read system logs and operate iptables**
-
 ## Features
 
  * Detecting break-in attemption and automatic blocking associate with iptables 
@@ -16,12 +14,15 @@ NISHI, Takao <zophos@koka-in.org>
  * iptables
  * Ruby 1.9.3 or higher
 
+**This script requires root privilege to read system logs and operate iptables**
+
 ## Installation
 
  1. edit cofig file "ip_lockout.rc" and copy it to /usr/local/etc or /etc
  2. create directory for lockout.db where you defined in config file (defualt: /var/lib/ip_lockout)
  3. test config ` # ip_lockout --dry-run`
  4. registrate to system or root crontab; eg)
+
     */2 * * * * /usr/local/sbin/ip_lockout
 
 
@@ -58,4 +59,4 @@ THIS SOFTWARE COMES WITH ABSOLUTELY NO WARRANTY.
 You can redistribute it and/or modify it under either the terms of the
 2-clause BSDL (see the file LICENCE) for details.
 
-Comments, patches, and beers are welcome :)
+Comments, patches, and glasses/bottles/barrels of beer are welcome :)
