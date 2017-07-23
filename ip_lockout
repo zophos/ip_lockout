@@ -1,8 +1,8 @@
 #!/usr/bin/ruby
 #
-# Detect break-in attemption and block them
+# Detect break-in attemption and block them  using iptables
 #
-# Time-stamp: <2017-07-23 12:11:57 zophos>
+# Time-stamp: <2017-07-23 13:55:45 zophos>
 #
 # USAGE:
 #   ip_lockout
@@ -14,6 +14,52 @@
 #
 require 'time'
 require 'ipaddr'
+
+
+########################################################################
+#
+# parse command line options
+#
+
+# if commnd name start with 'check-', assume as short-cut for --dry-run
+dry_run=true if File.basename($0)=~/^check-/
+ignore_db=nil
+ignore_iptables_entry=nil
+
+config_file=nil
+
+while(opt=ARGV.shift)
+    case opt
+    when '-h', '--help'
+        $stderr<< <<_EOS_
+#{File.basename($0)}
+Detect break-in attemption and block them using iptables
+
+USAGE:
+  -c [file], --config-file=[file]:
+          run with specified config file
+  -d, --dry-run: dry run (not operate iptables and db)
+
+  --ignore-db-entry: don't read existing lockout.db
+  --ignore-iptables-entry: don't read existing iptables entries
+
+  -h, --help: show this message and quit
+
+_EOS_
+        exit
+    when '-c'
+        config_file=ARGV.shift
+    when /^--conf/
+        config_file=opt.sprit('=',2)[1]
+    when '-d',/^--dry/
+        dry_run=true
+    when /^--ignore-db/
+        ignore_db=true
+    when /^--ignore-ip/
+        ignore_iptables_entry=true
+    end
+end
+
 
 ########################################################################
 #
@@ -28,8 +74,15 @@ CONFIG_PATH=[
     "/etc/ip_lockout.rc"
 ]
 
-CONFIG_PATH.each{|rc|
+config_path=if(config_file)
+                [config_file]
+            else
+                CONFIG_PATH
+            end
+
+config_path.each{|rc|
     if(File.exist?(rc))
+        $stderr<< "Configurate with \"#{rc}\"\n\n" if dry_run
         load rc
         break
     end
@@ -368,7 +421,7 @@ class Blocker
 
     HALF_THRESHOLD=
         NUM_THRESHOLD>2 ? NUM_THRESHOLD/2 : 1
-    def initialize
+    def initialize(ignore_db=nil,ignore_iptables_entry=nil)
         @now=if(defined?(FORCE_TIME_NOW_TO))
                  FORCE_TIME_NOW_TO
              else
@@ -382,10 +435,10 @@ class Blocker
         @expire_at=@now-LOCKOUT_SPAN
 
         @records=[]
-        _read_db
+        _read_db unless ignore_db
 
         @iptables=[]
-        _read_iptables
+        _read_iptables unless ignore_iptables_entry
     end
 
     def reg(addr,timestamp,tag=nil)
@@ -552,7 +605,7 @@ class Blocker
 end
 
 
-blocker=Blocker.new
+blocker=Blocker.new(ignore_db,ignore_iptables_entry)
 
 #
 # inspect each log
@@ -575,14 +628,8 @@ INSPECTOR.each{|log_file,hooks|
 }
 
 
-if(ARGV[0]=~/^-d/ || File.basename($0)=~/^check-/)
-    #
-    # dry-run
-    #
+if(dry_run)
     blocker.descript
 else
-    #
-    # exec iptables
-    #
     blocker.run
 end
