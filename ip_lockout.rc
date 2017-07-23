@@ -1,0 +1,169 @@
+# -*- mode: ruby -*-
+#
+# Sample configuration for ip_lockout -- a part of ip_lockout
+#
+# Time-stamp: <2017-07-23 12:32:03 zophos>
+#
+
+########################################################################
+#
+# System Configurations
+#
+
+#
+# path to iptables
+#
+IPTABLES='/sbin/iptables'
+
+#
+# iptables target for blocking operation
+#
+IPTABLES_TARGET='REJECT'
+
+#
+# path to store lockout.db. It will be rewrite always.
+#
+DB='/var/lib/ip_lockout/lockout.db'
+
+
+
+########################################################################
+#
+# Inspecting Configurations
+#
+
+#
+# inspecting duration in logfile (sec)
+#
+# count break-in attemption during from before INSPECT_SPAN to now
+#
+INSPECT_SPAN= 86400 # 24h
+
+#
+# minimum blocking duration (sec)
+#
+# Actual blocking duration are defined as;
+#   (num_detected_attemptions / NUM_THRESHOLD ) * LOCKOUT_SPAN
+#
+LOCKOUT_SPAN= 28800 # 8h
+
+#
+# start blocking threshold that
+# number of detected attemptions while INSPECT_SPAN
+#
+# When detected attemtions those have record of blocking expired
+# while INSPECT_SPAN, half of NUM_THRESHOLD is applied.
+#
+NUM_THRESHOLD=8
+
+#
+# host to subnet aggregation mask (CIDR subnetmask, 0 - 32)
+#
+# When multi host on same subnet ware detected, those entry are
+# aggregated to one subnet entry to reduce iptables entry.
+#
+# e,g)
+#  hosts: 192.168.0.1, 192.168.0.2, 192.168.0.123, 192.168.1.1
+#
+#  AGGREGATE_MASK=29:
+#          (192.168.0.1, 192.168.0.2)
+#                                     -> 192.168.0.0/29
+#  AGGREGATE_MASK=24:
+#          (192.168.0.1, 192.168.0.2, 192.168.0.123)
+#                                     -> 192.168.0.0/24
+#  AGGREGATE_MASK=16:
+#          (192.168.0.1, 192.168.0.2, 192.168.0.123, 192.168.1.1)
+#                                     -> 192.168.0.0/16
+#
+#
+# If AGGREGATE_MASK set to 0, ALL HOSTS IN THE WORLD WILL BE BLOCKED.
+#
+#
+# AGGREGATE_MASK=24
+
+#
+# igore host/subnet list (Array)
+#
+WHITE_LIST=[
+    '127.0.0.1',      # localhost
+    '127.0.0.0/8',    # localnet
+#   '192.168.0.0/24'  # Private net
+]
+
+
+########################################################################
+#
+# Notification
+#
+
+#
+# If true, each iptables action (insert/delete) is reported to STDERR.
+# It's useful for cron mail.
+#
+# REPORT_IPTABLES_ACTIION=true
+
+
+
+########################################################################
+#
+# Inspector for each log
+#  {
+#      log_file_name=>{
+#          tag=>[
+#              inspect pattern (Regexp),
+#              IP address extract procedure (Proc with 2 args)
+#          ],
+#      }
+#  }
+#
+# IP address extract procedure will be called with following two args;
+# those are
+#    line:  whole a line that matched inspect pattern
+#    match: MatchData of inspect pattern
+#
+AUTH_LOG='/var/log/auth.log'
+MAIL_LOG='/var/log/mail.log'
+
+INSPECTOR={
+    #
+    # detection that break-in attempt to sshd
+    #
+    AUTH_LOG=>{
+        :ssh=>[
+            /sshd\[\d+\]: Invalid user [a-z_][a-z0-9_]{0,30}\s+from\s+(\d{,3}\.\d{,3}\.\d{,3}\.\d{,3})/,
+            Proc.new{|line,match|
+                match[1]
+            }
+        ]
+    },
+
+    #
+    # detection that break-in attemp to Postfix SMTP-AUTH and dovecot
+    #
+    MAIL_LOG=>{
+        :smtp_auth=>[
+            /\[(\d{,3}\.\d{,3}\.\d{,3}\.\d{,3})\]: SASL LOGIN authentication failed/,
+            Proc.new{|line,match|
+                match[1]
+            }
+        ],
+        :imap=>[
+            /imap-login: Disconnected \(no auth attempts/,
+            Proc.new{|line,match|
+                m=line.match(/rip=(\d{,3}\.\d{,3}\.\d{,3}\.\d{,3})/)
+                m[1] if m
+            }
+        ]
+    }
+}
+
+
+########################################################################
+#
+# for debug / check configration
+#
+
+#
+# set now to gaven time
+#
+#FORCE_TIME_NOW_TO=Time.new(2017,7,15,9,0,0,"+09:00")
