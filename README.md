@@ -5,7 +5,8 @@ NISHI, Takao <zophos@koka-in.org>
 
 ## Features
 
- * Detecting break-in attemption and automatic blocking associate with iptables 
+ * Detecting break-in attemption and automatic blocking associate with iptables
+ * Supports multiple log files and protocols
  * Distributed hosts can manage as aggregated subnets.
  * No any gems is required
 
@@ -57,6 +58,6 @@ All rights reserved.
 THIS SOFTWARE COMES WITH ABSOLUTELY NO WARRANTY.
 
 You can redistribute it and/or modify it under either the terms of the
-2-clause BSDL (see the file LICENCE) for details.
+2-clause BSDL (see the file LICENCE for details).
 
 Comments, patches, and glasses/bottles/barrels of beer are welcome :)
