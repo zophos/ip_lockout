@@ -25,17 +25,17 @@ NISHI, Takao <zophos@koka-in.org>
  3. test config ` # ip_lockout --dry-run`
  4. registrate to system or root crontab; eg)
 
+`*/2 * * * * /usr/local/sbin/ip_lockout`
 
-    */2 * * * * /usr/local/sbin/ip_lockout
 
 ### Filter mode
 
 The filter mode reads all data from STDIN, and writes results to STDOUT.
-This mode does not requires root privilege.
+This mode does not require root privilege.
 
 
     $ (sudo /sbin/iptables -L INPUT -n) |\
-      cat - /var/log/auth.log | \
+      cat - /var/log/auth.log |\
       ip_lockout -F | (want to exec cmd ...)
 
 
@@ -49,7 +49,7 @@ Output format are:
       remain:    count number until expire
       max_count: count number at blocking start
       last:      timestamp of last attemption detected
-      update:    timestamp of  DB entry last updated
+      update:    timestamp of last DB entry updated
 
 
 
