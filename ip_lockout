@@ -2,7 +2,7 @@
 #
 # Detect break-in attemption and block them  using iptables
 #
-# Time-stamp: <2017-07-24 04:41:17 zophos>
+# Time-stamp: <2017-07-24 21:46:22 zophos>
 #
 # USAGE:
 #   ip_lockout
@@ -23,12 +23,12 @@ require 'ipaddr'
 
 dry_run=nil
 filter_mode=nil
-
 ignore_db=nil
 ignore_iptables_entry=nil
 
 config_file=nil
 
+now=Time.now
 
 while(opt=ARGV.shift)
     case opt
@@ -41,12 +41,12 @@ USAGE:
   -c [file], --config-file=[file]:
           run with specified config file
   -d, --dry-run: don't write db and iptables entry
-
-  -F, --filter-mode: read from STDIN and write to STDOUT
-          force set --ignore-iptables-entry option
+  -F, --filter-mode: read data from STDIN and write results to STDOUT
 
   --ignore-db-entry: don't read existing lockout.db
   --ignore-iptables-entry: don't read existing iptables entries
+
+  --now="timestamp": force set now as gaven timestamp
 
   -h, --help: show this message and quit
 
@@ -55,7 +55,7 @@ _EOS_
     when '-c'
         config_file=ARGV.shift
     when /^--conf/
-        config_file=opt.sprit('=',2)[1]
+        config_file=opt.split('=',2)[1]
     when '-d', /^--dry/
         dry_run=true
     when '-F', /^--filter/
@@ -64,6 +64,8 @@ _EOS_
         ignore_db=true
     when /^--ignore-ip/
         ignore_iptables_entry=true
+    when /^--now/
+        now=Time.parse(opt.split('=',2)[1])
     end
 end
 
@@ -78,8 +80,6 @@ when /^check-/
 when /^filter-/
     filter_mode=true
 end
-
-ignore_iptables_entry=true if filter_mode
 
 
 ########################################################################
@@ -109,6 +109,11 @@ config_path.each{|rc|
     end
 }
 
+filter_mode=true if defined?(FILTER_MODE) && FILTER_MODE
+ignore_iptables_entry=true if filter_mode
+
+
+
 ########################################################################
 #
 # set default values
@@ -122,8 +127,8 @@ IPTABLES_PROT='all' unless defined?(IPTABLES_PROT)
 DB='/var/lib/ip_lockout/lockout.db' unless defined?(DB)
 
 
-INSPECT_SPAN= 86400 unless defined?(INSPECT_SPAN) # 24h
-LOCKOUT_SPAN= 28800 unless defined?(LOCKOUT_SPAN) # 8h
+INSPECT_SPAN= 86400 unless defined?(INSPECT_SPAN)
+LOCKOUT_SPAN= 28800 unless defined?(LOCKOUT_SPAN)
 
 NUM_THRESHOLD=8 unless defined?(NUM_THRESHOLD)
 
@@ -133,13 +138,13 @@ REAGGREGATE_THRESHOLD=1.25 unless defined?(REAGGREGATE_THRESHOLD)
 
 WHITE_LIST=[] unless defined?(WHITE_LIST)
 
-WHITE_LIST_ADDRS=WHITE_LIST.map{|a|
+WHITE_LIST.map!{|a|
     IPAddr.new(a)
 }
 
 INSPECTOR={} unless defined?(INSPECTOR)
 
-warn 'No inspector is defined' if INSPECTOR.empty?
+raise 'No inspector is defined' if INSPECTOR.empty?
 
 
 ########################################################################
@@ -442,12 +447,10 @@ class Blocker
 
     HALF_THRESHOLD=
         NUM_THRESHOLD>2 ? NUM_THRESHOLD/2 : 1
-    def initialize(ignore_db=nil,ignore_iptables_entry=nil)
-        @now=if(defined?(FORCE_TIME_NOW_TO))
-                 FORCE_TIME_NOW_TO
-             else
-                 Time.now
-             end
+    def initialize(now=Time.now,
+                   ignore_db=nil,
+                   ignore_iptables_entry=nil)
+        @now=now
         Entry.now=@now
 
         @countor=Countor.new
@@ -465,10 +468,10 @@ class Blocker
     def reg(addr,timestamp,tag=nil)
         a=IPAddr.new(addr)
 
-        if(tag==:__iptables__)
+        if(tag==:__SYSTEM__)
             @iptables.push(Entry.new(a))
         else
-            return if WHITE_LIST_ADDRS.find{|w| w.include?(a) }
+            return if WHITE_LIST.find{|w| w.include?(a) }
 
             t=Time.parse(timestamp)
             @countor.reg(a,t,tag) if @ignore_before<t
@@ -565,6 +568,7 @@ class Blocker
         @countor.descript(port)
         port<< "\n"
 
+        port<< "----\n"
         self.run(true){|op,rec,timestamp|
             addr=rec.addr.to_s_with_mask
 
@@ -574,7 +578,7 @@ class Blocker
                 '-s',
                 addr,
                 '-j',
-                IPTABLES_TARGET].join(' ')
+                IPTABLES_TARGET].join(' ')<< "\n"
         }
 
         port<< "----\n"
@@ -642,25 +646,25 @@ class Blocker
 end
 
 
-blocker=Blocker.new(ignore_db,ignore_iptables_entry)
+blocker=Blocker.new(now,ignore_db,ignore_iptables_entry)
 
 if(filter_mode)
-    INSPECTOR['-']||={}
+    INSPECTOR[STDIN]||={}
     INSPECTOR.keys.each{|k|
-        next if k=='-'
-        INSPECTOR['-'].merge!(INSPECTOR[k])
+        next if k==STDIN
+        INSPECTOR[STDIN].merge!(INSPECTOR[k])
         INSPECTOR.delete(k)
     }
 else
-    INSPECTOR.delete('-')
+    INSPECTOR.delete(STDIN)
 end
 
 #
 # inspect each log
 #
 INSPECTOR.each{|log_file,hooks|
-    f=if(log_file=='-')
-          $stdin
+    f=if(log_file==STDIN)
+          STDIN
       else
           File.open(log_file)
       end
@@ -678,7 +682,7 @@ INSPECTOR.each{|log_file,hooks|
             end
         }
     }
-    f.close unless f==$stdin
+    f.close unless f==STDIN
 }
 
 
@@ -687,7 +691,7 @@ if(dry_run)
 elsif(filter_mode)
     blocker.run{|op,rec,ts|
         $stdout<< "#{op} #{rec.addr.to_s_with_mask} "<<
-        "#{rec.status} #{rec.count} #{rec.remain} #{rec.last.to_s} #{ts.to_s}\n"
+        "#{rec.status} #{rec.remain}/#{rec.count}  #{rec.last.to_s} #{ts.to_s}\n"
     }
 else
     blocker.run

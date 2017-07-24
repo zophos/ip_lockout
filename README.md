@@ -7,15 +7,16 @@ NISHI, Takao <zophos@koka-in.org>
 
  * Detecting break-in attemption and automatic blocking associate with iptables
  * Supports multiple log files and protocols
- * Distributed hosts can manage as aggregated subnets.
+ * Distributed hosts can manage as aggregated subnets
  * No any gems is required
+ * Supports stand-alone mode and filter mode
 
 ## Requirements
 
  * iptables
  * Ruby 1.9.3 or higher
 
-**This script requires root privilege to read system logs and operate iptables**
+**The stand alone mode of this script requires root privilege to read system logs and operate iptables**
 
 ## Installation
 
@@ -24,7 +25,32 @@ NISHI, Takao <zophos@koka-in.org>
  3. test config ` # ip_lockout --dry-run`
  4. registrate to system or root crontab; eg)
 
+
     */2 * * * * /usr/local/sbin/ip_lockout
+
+### Filter mode
+
+The filter mode reads all data from STDIN, and writes results to STDOUT.
+This mode does not requires root privilege.
+
+
+    $ (sudo /sbin/iptables -L INPUT -n) |\
+      cat - /var/log/auth.log | \
+      ip_lockout -F | (want to exec cmd ...)
+
+
+Output format are:
+
+    OP ADDR status remain/max_count last update
+    
+      OP:        'I' (start blocking) or 'D' (stop blocking)
+      ADDR:      host or subnet IP address
+      status:    host/subnet status in DB. 'blocked' or 'expired'
+      remain:    count number until expire
+      max_count: count number at blocking start
+      last:      timestamp of last attemption detected
+      update:    timestamp of  DB entry last updated
+
 
 
 ### Usage
@@ -32,10 +58,13 @@ NISHI, Takao <zophos@koka-in.org>
     -c [file], --config-file=[file]:
           run with specified config file
     -d, --dry-run: dry run (not operate iptables and db)
+    -F, --filter-mode: read data from STDIN and write results to STDOUT
     
     --ignore-db-entry: don't read existing lockout.db
     --ignore-iptables-entry: don't read existing iptables entries
     
+    --now="timestamp": force set now as gaven timestamp
+
     -h, --help: show this message and quit
 
 ### Customize

@@ -2,7 +2,7 @@
 #
 # Sample configuration for ip_lockout -- a part of ip_lockout
 #
-# Time-stamp: <2017-07-24 05:03:58 zophos>
+# Time-stamp: <2017-07-24 21:40:54 zophos>
 #
 
 ########################################################################
@@ -124,8 +124,6 @@ WHITE_LIST=[
 AUTH_LOG='/var/log/auth.log'
 MAIL_LOG='/var/log/mail.log'
 
-STDIN='-' # valid only at filter mode
-
 INSPECTOR={
     #
     # detection that break-in attempt to sshd
@@ -163,10 +161,10 @@ INSPECTOR={
     #
     STDIN=>{
         #
-        # special entry for iptables
-        # The tag ':__iptables__' is reserved for system firewall record.
+        # special entry for iptables or other system firewall entries.
+        # The tag ':__SYSTEM__' is reserved for system firewall record.
         #
-        :__iptables__ =>[
+        :__SYSTEM__ =>[
             /^REJECT\s+[a-zA-Z0-9]+\s+--\s+(\d{,3}\.\d{,3}\.\d{,3}\.\d{,3}(\/\d+)?)/,
             Proc.new{|line,match|
                 match[1]
@@ -181,10 +179,8 @@ INSPECTOR={
 
 ########################################################################
 #
-# for debug / check configration
+# When set FILTER_MODE = true, run always filter mode.
 #
-
+# Filter mode does NOT require root privelege.
 #
-# set now to gaven time
-#
-#FORCE_TIME_NOW_TO=Time.new(2017,7,15,9,0,0,"+09:00")
+#FILTER_MODE=true
