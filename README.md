@@ -8,13 +8,13 @@ NISHI, Takao <zophos@koka-in.org>
  * Detecting break-in attemption and automatic blocking associate with iptables
  * Supports multiple log files and protocols
  * Distributed hosts can manage as aggregated subnets
- * No any gems is required
  * Supports stand-alone mode and filter mode
+ * No any gems is required
 
 ## Requirements
 
- * iptables
  * Ruby 1.9.3 or higher
+ * iptables (on stand-alone mode) 
 
 **The stand alone mode of this script requires root privilege to read system logs and operate iptables**
 
