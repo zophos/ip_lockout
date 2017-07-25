@@ -8,15 +8,15 @@ NISHI, Takao <zophos@koka-in.org>
  * Detecting break-in attemption and automatic blocking associate with iptables
  * Supports multiple log files and protocols
  * Distributed hosts can manage as aggregated subnets
- * Supports stand-alone mode and filter mode
- * No any gems is required
+ * Supports standalone and filter modes
+ * No any extra gems is required
 
 ## Requirements
 
  * Ruby 1.9.3 or higher
- * iptables (on stand-alone mode) 
+ * iptables (on standalone mode) 
 
-**The stand alone mode of this script requires root privilege to read system logs and operate iptables**
+**The standalone mode of this script requires root privilege to read system logs and operate iptables**
 
 
 ## Files
@@ -31,10 +31,10 @@ NISHI, Takao <zophos@koka-in.org>
 
  1. edit cofig file "ip_lockout.rc" and copy it to /usr/local/etc or /etc
  2. create a directory for lockout.db where you defined in config file (defualt: /var/lib/ip_lockout)
- 3. test config ` # ip_lockout --dry-run`
+ 3. test config ` # ./ip_lockout --dry-run`
  4. registrate to system or root crontab; eg)
 
-`*/2 * * * * /usr/local/sbin/ip_lockout` # run every 2 min on
+`*/2 * * * * /usr/local/sbin/ip_lockout  # run every 2 min with standalone mode`
 
 
 ### Filter mode
