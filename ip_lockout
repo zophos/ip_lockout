@@ -2,7 +2,7 @@
 #
 # Detect break-in attemption and block them  using iptables
 #
-# Time-stamp: <2017-07-24 21:46:22 zophos>
+# Time-stamp: <2017-07-25 21:54:58 zophos>
 #
 # USAGE:
 #   ip_lockout
@@ -21,8 +21,9 @@ require 'ipaddr'
 # parse command line options
 #
 
-dry_run=nil
 filter_mode=nil
+show_status=nil
+dry_run=nil
 ignore_db=nil
 ignore_iptables_entry=nil
 
@@ -40,8 +41,10 @@ Detect break-in attemption and block them using iptables
 USAGE:
   -c [file], --config-file=[file]:
           run with specified config file
-  -d, --dry-run: don't write db and iptables entry
   -F, --filter-mode: read data from STDIN and write results to STDOUT
+  -S, --show-status: Show current status
+
+  -d, --dry-run: don't update db and iptables entry
 
   --ignore-db-entry: don't read existing lockout.db
   --ignore-iptables-entry: don't read existing iptables entries
@@ -56,10 +59,12 @@ _EOS_
         config_file=ARGV.shift
     when /^--conf/
         config_file=opt.split('=',2)[1]
-    when '-d', /^--dry/
-        dry_run=true
     when '-F', /^--filter/
         filter_mode=true
+    when '-S', /^--show/
+        show_status=true
+    when '-d', /^--dry/
+        dry_run=true
     when /^--ignore-db/
         ignore_db=true
     when /^--ignore-ip/
@@ -76,7 +81,7 @@ end
 case File.basename($0)
 when /^check-/
     # commnd name start with 'check-', assume as short-cut for --dry-run
-    dry_run=true
+    show_status=true
 when /^filter-/
     filter_mode=true
 end
@@ -112,6 +117,7 @@ config_path.each{|rc|
 filter_mode=true if defined?(FILTER_MODE) && FILTER_MODE
 ignore_iptables_entry=true if filter_mode
 
+dry_run=true if show_status
 
 
 ########################################################################
@@ -145,6 +151,18 @@ WHITE_LIST.map!{|a|
 INSPECTOR={} unless defined?(INSPECTOR)
 
 raise 'No inspector is defined' if INSPECTOR.empty?
+
+FILTER_OUTPUT=Proc.new{|op,rec,ts|
+    [
+        ts.to_s,
+        op,
+        rec.addr.to_s_with_mask,
+        rec.status,
+        "#{rec.remain}/#{rec.count}",
+        rec.last.to_s
+    ].join(' ')
+} unless defined?(FILTER_OUTPUT)
+
 
 
 ########################################################################
@@ -685,14 +703,12 @@ INSPECTOR.each{|log_file,hooks|
     f.close unless f==STDIN
 }
 
-
-if(dry_run)
+if(show_status)
     blocker.descript
 elsif(filter_mode)
-    blocker.run{|op,rec,ts|
-        $stdout<< "#{op} #{rec.addr.to_s_with_mask} "<<
-        "#{rec.status} #{rec.remain}/#{rec.count}  #{rec.last.to_s} #{ts.to_s}\n"
+    blocker.run(dry_run){|op,rec,ts|
+        $stdout<< FILTER_OUTPUT.call(op,rec,ts)<< "\n"
     }
 else
-    blocker.run
+    blocker.run(dry_run)
 end

@@ -2,7 +2,7 @@
 #
 # Sample configuration for ip_lockout -- a part of ip_lockout
 #
-# Time-stamp: <2017-07-24 21:40:54 zophos>
+# Time-stamp: <2017-07-25 22:04:57 zophos>
 #
 
 ########################################################################
@@ -171,7 +171,7 @@ INSPECTOR={
             }
         ]
         #
-        # other entries for each log-file will be merged in filter mode
+        # other entry for each log-file will be merged here at filter mode
         #
     }
 }
@@ -184,3 +184,34 @@ INSPECTOR={
 # Filter mode does NOT require root privelege.
 #
 #FILTER_MODE=true
+
+#
+# Filter mode output formatter
+#
+# op: String; 'I' trig up blocking | 'D' trig down blocking
+# rec: Blocker::Entry
+#    addr: IPAddr; Target host/subnet's IP address
+#    status: Symbol; Current status in DB; :blocked, :expired, :force_expired
+#    count: Integer; Detected attemption count at blocking start
+#    remain: Integer; Remain count number until expire
+#    last: Time; Timestamp of last attemption detected
+# updated: Time; Timestamp of last updated of this DB entry
+#
+#
+# rec.addr has two original methods those are;
+#    cidr_mask: Integer; subnet mask
+#    to_s_with_mask(always_with_mask=nil): String;
+#        IP address with mask.
+#        When always_with_mask is true, /32 (IPv4) or /128 (IPv6) was shown.
+#
+#
+FILTER_OUTPUT=Proc.new{|op,rec,updated|
+    [
+        updated.to_s,
+        op,
+        rec.addr.to_s_with_mask,
+        rec.status,
+        "#{rec.remain}/#{rec.count}",
+        rec.last.to_s
+    ].join(' ')
+}
