@@ -1,16 +1,20 @@
 #!/usr/bin/ruby
 #
-# Detect break-in attemption and block them  using iptables
+# ip_lockout
+#   -- Script for detecting break-in attemption and automatic blocking
 #
-# Time-stamp: <2017-07-25 21:54:58 zophos>
+# https://github.com/zophos/ip_lockout
 #
-# USAGE:
-#   ip_lockout
-#      or
-#   check-ip_lockout (dry-run; shold be hard link)
+# Time-stamp: <2017-07-26 07:34:42 zophos>
 #
-# NOTE:
-#   This script requires root privilege to read logs and exec iptables.
+# Copyright (c) 2017, NISHI Takao <zophos@koka-in.org>
+# All rights reserved.
+#
+# THIS SOFTWARE COMES WITH ABSOLUTELY NO WARRANTY.
+#
+# You can redistribute it and/or modify it under either the terms of
+# the 2-clause BSDL.
+#
 #
 require 'time'
 require 'ipaddr'
