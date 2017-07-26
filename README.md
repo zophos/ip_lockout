@@ -46,12 +46,15 @@ system logs and operate iptables.**
 
 ### Usage
 
+    ip_lockout [options]
+    
+    options:
     -c [file], --config-file=[file]:
             run with specified config file
     -F, --filter-mode: read data from STDIN and write results to STDOUT
     -S, --show-status: show current status
     
-    -d, --dry-run: don't update db and iptables entry
+    -d, --dry-run: don't update db and iptables entries
     
     --ignore-db-entry: don't read existing lockout.db
     --ignore-iptables-entry: don't read existing iptables entries
@@ -108,7 +111,7 @@ See [ip_lockout.rc](./ip_lockout.rc) for details.
 
 ### Description mode
 
-In case of `--show-description` option is given, ip_lockout runs
+In case of `--show-status` option is given, ip_lockout runs
 as description mode.
 
 This mode shows current DB status, summary of logs and schedules of
