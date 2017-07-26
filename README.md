@@ -49,7 +49,7 @@ system logs and operate iptables.**
     -c [file], --config-file=[file]:
             run with specified config file
     -F, --filter-mode: read data from STDIN and write results to STDOUT
-    -S, --show-status: Show current status
+    -S, --show-status: show current status
     
     -d, --dry-run: don't update db and iptables entry
     
@@ -80,7 +80,7 @@ iptables.
 
 ### Filter mode
 
-The filter mode that run with `-F` or `--filter-mode` option,
+The filter mode that runs with `-F` or `--filter-mode` option,
 reads all data from STDIN, and writes results to STDOUT.
 This mode does not require root privilege.
 
@@ -90,17 +90,17 @@ This mode does not require root privilege.
       ip_lockout -F | (want to exec cmd ...)
 
 
-Default output format are
+Default output format is `[updated] OP ADDR status remain/max_countlast`.
 
-    [updated] OP ADDR status remain/max_count last
+Where:
     
-      updated:   Timestamp of last DB entry updated
-      OP:        'I' (start blocking) or 'D' (stop blocking)
-      ADDR:      host or subnet IP address
-      status:    host/subnet status in DB. 'blocked' or 'expired'
-      remain:    count number until expire
-      max_count: count number at blocking start
-      last:      timestamp of last attempt detected
+    updated:   Timestamp of last DB entry updated
+    OP:        'I' (start blocking) or 'D' (stop blocking)
+    ADDR:      host or subnet IP address
+    status:    host/subnet status in DB. 'blocked' or 'expired'
+    remain:    count number until expire
+    max_count: count number at blocking start
+    last:      timestamp of last attempt detected
 
 You can customize the output format.
 See [ip_lockout.rc](./ip_lockout.rc) for details.
@@ -108,13 +108,19 @@ See [ip_lockout.rc](./ip_lockout.rc) for details.
 
 ### Description mode
 
-In case of `--show-status` option is given, ip_lockout runs
+In case of `--show-description` option is given, ip_lockout runs
 as description mode.
 
 This mode shows current DB status, summary of logs and schedules of
 trig up/down iptables entry.
 Any iptables/DB entries are NOT updated.
 
+### Command name short-cut
+
+ip_lockout changes behavior with command name.
+
+ * filter-ip_lockout: always runs with --filter-mode option
+ * show-ip_lockout: always runs with --show-status option
 
 ### Customize
 
