@@ -1,6 +1,6 @@
 # ip_lockout
 
-Script for detecting break-in attemption and automatic blocking
+Script for detecting break-in attempts and automatic blocking
 
 NISHI, Takao <zophos@koka-in.org>
 
@@ -8,7 +8,7 @@ https://github.com/zophos/ip_lockout
 
 ## Features
 
- * Detecting break-in attemption and automatic blocking associate with iptables
+ * Detecting break-in attempts and automatic blocking associate with iptables
  * Supports multiple log files and protocols
  * Distributed hosts can manage as aggregated subnets
  * Supports standalone and filter modes
@@ -35,9 +35,9 @@ system logs and operate iptables.**
 
  1. edit cofig file "ip_lockout.rc" and copy it to /usr/local/etc or /etc
  2. create a directory for lockout.db where you defined in config file
-(defualt: /var/lib/ip_lockout)
+(default: /var/lib/ip_lockout)
  3. test config ` # ./ip_lockout --dry-run`
- 4. registrate to system or root crontab; eg)
+ 4. register to system or root crontab; eg)
 
 `*/2 * * * * /usr/local/sbin/ip_lockout  # run every 2 min with standalone mode`
 
@@ -62,17 +62,17 @@ system logs and operate iptables.**
 
 ### Standalone mode
 
-If `--filter-mode` nor `--show-status` option given, ip_lockout runs
-as standalone mode.
-This mode read existing iptables entries, inspect log files, and
-add/delete iptables entries.
+If NOT `--filter-mode` nor `--show-status` option is given,
+ip_lockout runs as standalone mode.
+This mode reads existing iptables entries, inspects log files,
+and adds/deletes iptables entries.
 
 Default log files to inspect are
 
  * /var/log/auth.log for sshd
  * /var/log/mail.log for postfix SASL auth and imapd (dovecot)
 
-Those can be customized in confiuration file.
+Those can be customized in the configuration file.
 
 Standalone mode requires root privilege to read system logs and operate
 iptables.
@@ -80,8 +80,8 @@ iptables.
 
 ### Filter mode
 
-The filter mode that run with `-F` or `--filter-mode` option, reads
-all data from STDIN, and writes results to STDOUT.
+The filter mode that run with `-F` or `--filter-mode` option,
+reads all data from STDIN, and writes results to STDOUT.
 This mode does not require root privilege.
 
 
@@ -100,7 +100,7 @@ Default output format are
       status:    host/subnet status in DB. 'blocked' or 'expired'
       remain:    count number until expire
       max_count: count number at blocking start
-      last:      timestamp of last attemption detected
+      last:      timestamp of last attempt detected
 
 You can customize the output format.
 See [ip_lockout.rc](./ip_lockout.rc) for details.
@@ -108,12 +108,12 @@ See [ip_lockout.rc](./ip_lockout.rc) for details.
 
 ### Description mode
 
-In case of `--show-status` option given, ip_lockout runs
+In case of `--show-status` option is given, ip_lockout runs
 as description mode.
 
 This mode shows current DB status, summary of logs and schedules of
 trig up/down iptables entry.
-Any iptables/DB entries were NOT updated.
+Any iptables/DB entries are NOT updated.
 
 
 ### Customize
