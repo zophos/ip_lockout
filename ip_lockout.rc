@@ -2,7 +2,7 @@
 #
 # Sample configuration for ip_lockout -- a part of ip_lockout
 #
-# Time-stamp: <2017-07-25 22:04:57 zophos>
+# Time-stamp: <2017-07-26 22:23:45 zophos>
 #
 
 ########################################################################
@@ -19,6 +19,39 @@ IPTABLES='/sbin/iptables'
 # iptables target for blocking operation
 #
 IPTABLES_TARGET='REJECT'
+
+#
+# Commnad line options to read existing iptables entries
+#
+IPTABLES_LIST_OPTIONS='-L INPUT -n'
+
+#
+# Hook for iptalbes entries. See section Inspector for details.
+#
+IPTABLES_ENTRY_HOOK=[
+    /^#{IPTABLES_TARGET}\s+[a-zA-Z0-9]+\s+--\s+(\d{,3}\.\d{,3}\.\d{,3}\.\d{,3}(\/\d+)?)/,
+    Proc.new{|line,match|
+        match[1]
+    }
+]
+
+#
+# Building command line procedure to updating iptables entries
+#
+# op: 'I' insert or 'D' delete record (String)
+# addr: host or subnet address (String)
+#
+IPTABLES_WRITE_FORMAT_PROC=Proc.new{|op,addr|
+    "#{IPTABLES} -%s INPUT -s %s -j #{IPTABLES_TARGET}"%[op,addr]
+}
+
+#
+# If IPTABLES_REPORT_ACTIION=true, each iptables action (insert/delete)
+# will be reported to STDERR.
+# It's useful for cron mail.
+#
+#IPTABLES_REPORT_ACTIION=true
+
 
 #
 # path to store lockout.db. It will be rewrite always.
@@ -91,18 +124,6 @@ WHITE_LIST=[
 ]
 
 
-########################################################################
-#
-# Notification
-#
-
-#
-# If true, each iptables action (insert/delete) is reported to STDERR.
-# It's useful for cron mail.
-#
-#REPORT_IPTABLES_ACTIION=true
-
-
 
 ########################################################################
 #
@@ -157,19 +178,13 @@ INSPECTOR={
     },
 
     #
-    # This entry will be ignored in exceptions filter mode
+    # This entry will be used in filter mode
     #
     STDIN=>{
         #
-        # special entry for iptables or other system firewall entries.
         # The tag ':__SYSTEM__' is reserved for system firewall record.
         #
-        :__SYSTEM__ =>[
-            /^REJECT\s+[a-zA-Z0-9]+\s+--\s+(\d{,3}\.\d{,3}\.\d{,3}\.\d{,3}(\/\d+)?)/,
-            Proc.new{|line,match|
-                match[1]
-            }
-        ]
+        :__SYSTEM__ =>IPTABLES_ENTRY_HOOK
         #
         # other entry for each log-file will be merged here at filter mode
         #
@@ -207,7 +222,7 @@ INSPECTOR={
 #
 FILTER_OUTPUT=Proc.new{|op,rec,updated|
     [
-        updated.to_s,
+        "[#{updated}]",
         op,
         rec.addr.to_s_with_mask,
         rec.status,

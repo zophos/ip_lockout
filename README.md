@@ -56,13 +56,13 @@ system logs and operate iptables.**
     --ignore-db-entry: don't read existing lockout.db
     --ignore-iptables-entry: don't read existing iptables entries
     
-    --now="timestamp": force set now as gaven timestamp
+    --now="timestamp": force set now as given timestamp
     
     -h, --help: show this message and quit
 
 ### Standalone mode
 
-If `--filter-mode` nor `--show-status` option gaven, ip_lockout runs
+If `--filter-mode` nor `--show-status` option given, ip_lockout runs
 as standalone mode.
 This mode read existing iptables entries, inspect log files, and
 add/delete iptables entries.
@@ -92,7 +92,7 @@ This mode does not require root privilege.
 
 Default output format are
 
-    updated OP ADDR status remain/max_count last
+    [updated] OP ADDR status remain/max_count last
     
       updated:   Timestamp of last DB entry updated
       OP:        'I' (start blocking) or 'D' (stop blocking)
@@ -108,7 +108,7 @@ See [ip_lockout.rc](./ip_lockout.rc) for details.
 
 ### Description mode
 
-In case of `--show-status` option gaven, ip_lockout runs
+In case of `--show-status` option given, ip_lockout runs
 as description mode.
 
 This mode shows current DB status, summary of logs and schedules of
@@ -123,8 +123,8 @@ TBW
 See [ip_lockout.rc](./ip_lockout.rc) comments.
 
 
-## Licece
-Copyright (c) 2017, NISHI Takao <zophos@koka-in.org>
+## Licence
+Copyright (c) 2017, NISHI, Takao <zophos@koka-in.org>
 All rights reserved.
 
 THIS SOFTWARE COMES WITH ABSOLUTELY NO WARRANTY.

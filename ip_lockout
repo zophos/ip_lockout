@@ -5,9 +5,9 @@
 #
 # https://github.com/zophos/ip_lockout
 #
-# Time-stamp: <2017-07-26 07:34:42 zophos>
+# Time-stamp: <2017-07-26 22:26:52 zophos>
 #
-# Copyright (c) 2017, NISHI Takao <zophos@koka-in.org>
+# Copyright (c) 2017, NISHI, Takao <zophos@koka-in.org>
 # All rights reserved.
 #
 # THIS SOFTWARE COMES WITH ABSOLUTELY NO WARRANTY.
@@ -130,9 +130,19 @@ dry_run=true if show_status
 #
 IPTABLES='/sbin/iptables' unless defined?(IPTABLES)
 IPTABLES_TARGET='REJECT' unless defined?(IPTABLES_TARGET)
-IPTABLES_PROT='all' unless defined?(IPTABLES_PROT)
+IPTABLES_LIST_OPTIONS="-L INPUT -n" unless defined?(IPTABLES_LIST_OPTIONS)
+IPTABLES_ENTRY_HOOK=[
+    /^#{IPTABLES_TARGET}\s+[a-zA-Z0-9]+\s+--\s+(\d{,3}\.\d{,3}\.\d{,3}\.\d{,3}(\/\d+)?)/,
+    Proc.new{|line,match|
+        match[1]
+    }
+] unless defined?(IPTABLES_ENTRY_HOOK)
 
-# REPORT_IPTABLES_ACTIION=true
+IPTABLES_WRITE_FORMAT_PROC=Proc.new{|op,addr|
+        "#{IPTABLES} -%s INPUT -s %s -j #{IPTABLES_TARGET}"%[op,addr]
+} unless defined?(IPTABLES_WRITE_FORMAT_PROC)
+
+IPTABLES_REPORT_ACTIION=nil unless defined?(IPTABLES_REPORT_ACTIION)
 
 DB='/var/lib/ip_lockout/lockout.db' unless defined?(DB)
 
@@ -155,6 +165,8 @@ WHITE_LIST.map!{|a|
 INSPECTOR={} unless defined?(INSPECTOR)
 
 raise 'No inspector is defined' if INSPECTOR.empty?
+
+
 
 FILTER_OUTPUT=Proc.new{|op,rec,ts|
     [
@@ -458,8 +470,8 @@ class Blocker
         end
 
         def descript(port=$stdout)
-            port<< "#{@addr.to_s_with_mask}: #{@last.to_s} (#{@count})\n"<<
-                "  [#{@status} (remain: #{remain}) #{@updated}]\n"
+            port<< "#{@addr.to_s_with_mask}: #{@last.to_s}\n"<<
+                "  [#{@status} (#{remain}/#{count}) #{@updated}]\n"
         end
     end
     #
@@ -498,6 +510,20 @@ class Blocker
             t=Time.parse(timestamp)
             @countor.reg(a,t,tag) if @ignore_before<t
         end
+    end
+
+    def parse(line,hooks)
+        hooks.each{|tag,(re,addrhook)|
+            m=line.match(re)
+            next unless m
+
+            addr=addrhook.call(line,m)
+            if(addr)
+                self.reg(addr,line,tag) # Time#parse will be parse log
+            else
+                warn 'SKIP: could not find IP addr'
+            end
+        }
     end
 
     def update
@@ -594,13 +620,7 @@ class Blocker
         self.run(true){|op,rec,timestamp|
             addr=rec.addr.to_s_with_mask
 
-            $stdout<< [IPTABLES,
-                "-#{op}",
-                'INPUT',
-                '-s',
-                addr,
-                '-j',
-                IPTABLES_TARGET].join(' ')<< "\n"
+            $stdout<< IPTABLES_WRITE_FORMAT_PROC.call(op,addr)<< "\n"
         }
 
         port<< "----\n"
@@ -630,12 +650,10 @@ class Blocker
     def _read_iptables
         @iptables.clear
 
-        IO.popen([IPTABLES,'-L','INPUT','-n']){|io|
+        hook={:__SYSTEM__ =>IPTABLES_ENTRY_HOOK}
+        IO.popen("#{IPTABLES} #{IPTABLES_LIST_OPTIONS}"){|io|
             io.each{|line|
-                (target,prot,opt,src,dst,)=line.strip.split(/\s+/,6)
-                if(target==IPTABLES_TARGET && prot==IPTABLES_PROT)
-                    @iptables.push(Entry.new(IPAddr.new(src)))
-                end
+                self.parse(line,hook)
             }
         }
     end
@@ -643,16 +661,9 @@ class Blocker
     def _exec_iptables(op,rec,timestamp,dry)
         addr=rec.addr.to_s_with_mask
 
-        cmd=[IPTABLES,
-             "-#{op}",
-             'INPUT',
-             '-s',
-             addr,
-             '-j',
-             IPTABLES_TARGET]
+        cmd=IPTABLES_WRITE_FORMAT_PROC.call(op,addr)
 
-        if(defined?(REPORT_IPTABLES_ACTIION) &&
-                REPORT_IPTABLES_ACTIION)
+        if(IPTABLES_REPORT_ACTIION)
             $stderr<< "#{timestamp.to_s}: "
             if(op=='I')
                 $stderr<< "block #{addr}. (#{rec.count})\n"
@@ -692,17 +703,7 @@ INSPECTOR.each{|log_file,hooks|
       end
 
     f.each{|line|
-        hooks.each{|tag,(re,addrhook)|
-            m=line.match(re)
-            if(m)
-                addr=addrhook.call(line,m)
-                if(addr)
-                    blocker.reg(addr,line,tag) # Time#parse will be parse log
-                else
-                    warn 'SKIP: could not find IP addr'
-                end
-            end
-        }
+        blocker.parse(line,hooks)
     }
     f.close unless f==STDIN
 }
