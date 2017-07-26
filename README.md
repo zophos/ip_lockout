@@ -26,7 +26,7 @@ system logs and operate iptables.**
 ## Files
 
   * README.md
-  * LICENCE
+  * LICENSE
   * ip_lockout : executable script
   * ip_lockout.rc : sample configuration file
 
@@ -123,13 +123,13 @@ TBW
 See [ip_lockout.rc](./ip_lockout.rc) comments.
 
 
-## Licence
+## License
 Copyright (c) 2017, NISHI, Takao <zophos@koka-in.org>
 All rights reserved.
 
 THIS SOFTWARE COMES WITH ABSOLUTELY NO WARRANTY.
 
 You can redistribute it and/or modify it under either the terms of the
-2-clause BSDL (see the file [LICENCE](LICENCE) for details).
+2-clause BSDL (see the file [LICENSE](LICENSE) for details).
 
 Comments, patches, and glasses/bottles/barrels of beer are welcome :)
