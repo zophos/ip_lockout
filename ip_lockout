@@ -5,7 +5,7 @@
 #
 # https://github.com/zophos/ip_lockout
 #
-# Time-stamp: <2017-07-30 13:03:13 zophos>
+# Time-stamp: <2017-07-30 14:07:21 zophos>
 #
 # Copyright (c) 2017, NISHI, Takao <zophos@koka-in.org>
 # All rights reserved.
@@ -347,18 +347,19 @@ class Blocker
             @hosts[a].add_tag(tag)
         end
         def suppress(a,t)
-            if(@hosts[a])
-                @hosts[a].count_down(t)
-                @hosts.delete(a) if @hosts[a].count<=0
-            end
+            @hosts[a].count_down(t) if @hosts[a]
         end
         def aggregate
             @subnets={}
-            @hosts.values.each{|h|
-                addr=h.addr.mask(AGGREGATE_MASK)
-                @subnets[addr]||=
-                    Subnet.new(h,AGGREGATE_MASK)
-                @subnets[addr].add_host(h)
+            @hosts.keys.each{|a|
+                h=@hosts[a]
+                if(h.count<=0)
+                    @hosts.delete(a)
+                else
+                    addr=h.addr.mask(AGGREGATE_MASK)
+                    @subnets[addr]||=Subnet.new(h,AGGREGATE_MASK)
+                    @subnets[addr].add_host(h)
+                end
             }
 
             @subnets
@@ -514,17 +515,19 @@ class Blocker
     def reg(addr,timestamp,tag=nil)
         a=IPAddr.new(addr)
 
-        case tag
-        when :__SYSTEM__
+        if(tag==:__SYSTEM__)
             @iptables.push(Entry.new(a))
-        when :__SUPPRESSER__
-            t=Time.parse(timestamp)
-            @countor.suppress(a,t) if @ignore_before<t
         else
             return if WHITE_LIST.find{|w| w.include?(a) }
 
             t=Time.parse(timestamp)
-            @countor.reg(a,t,tag) if @ignore_before<t
+            if(@ignore_before<t)
+                if(tag==:__SUPPRESSER__)
+                    @countor.suppress(a,t)
+                else
+                    @countor.reg(a,t,tag)
+                end
+            end
         end
     end
 
