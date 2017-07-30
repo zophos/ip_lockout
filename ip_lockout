@@ -5,7 +5,7 @@
 #
 # https://github.com/zophos/ip_lockout
 #
-# Time-stamp: <2017-07-26 23:11:36 zophos>
+# Time-stamp: <2017-07-30 13:03:13 zophos>
 #
 # Copyright (c) 2017, NISHI, Takao <zophos@koka-in.org>
 # All rights reserved.
@@ -240,6 +240,10 @@ class Blocker
                 @last=last if @last<last
                 @count+=count
             end
+            def count_down(last,count=1)
+                @last=last if @last<last
+                @count-=count
+            end
 
             def add_tag(tag)
                 @tags.push(tag)
@@ -341,6 +345,12 @@ class Blocker
             @hosts[a]||=Host.new(a)
             @hosts[a].count_up(t)
             @hosts[a].add_tag(tag)
+        end
+        def suppress(a,t)
+            if(@hosts[a])
+                @hosts[a].count_down(t)
+                @hosts.delete(a) if @hosts[a].count<=0
+            end
         end
         def aggregate
             @subnets={}
@@ -504,8 +514,12 @@ class Blocker
     def reg(addr,timestamp,tag=nil)
         a=IPAddr.new(addr)
 
-        if(tag==:__SYSTEM__)
+        case tag
+        when :__SYSTEM__
             @iptables.push(Entry.new(a))
+        when :__SUPPRESSER__
+            t=Time.parse(timestamp)
+            @countor.suppress(a,t) if @ignore_before<t
         else
             return if WHITE_LIST.find{|w| w.include?(a) }
 

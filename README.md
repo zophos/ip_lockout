@@ -93,7 +93,7 @@ This mode does not require root privilege.
       ip_lockout -F | (want to exec cmd ...)
 
 
-Default output format is `[updated] OP ADDR status remain/max_countlast`.
+Default output format is `[updated] OP ADDR status remain/max_count last`.
 
 Where:
     
@@ -120,7 +120,7 @@ Any iptables/DB entries are NOT updated.
 
 ### Command name short-cut
 
-ip_lockout changes behavior with command name.
+ip_lockout changes it's behavior by command name.
 
  * filter-ip_lockout: always runs with --filter-mode option
  * show-ip_lockout: always runs with --show-status option
