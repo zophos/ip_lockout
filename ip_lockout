@@ -5,7 +5,7 @@
 #
 # https://github.com/zophos/ip_lockout
 #
-# Time-stamp: <2017-07-30 14:07:21 zophos>
+# Time-stamp: <2017-08-03 08:37:51 zophos>
 #
 # Copyright (c) 2017, NISHI, Takao <zophos@koka-in.org>
 # All rights reserved.
@@ -114,7 +114,7 @@ config_path=if(config_file)
 
 config_path.each{|rc|
     if(File.exist?(rc))
-        $stderr<< "Configurate with \"#{rc}\"\n\n" if dry_run
+        $stderr<< "Configurate with \"#{rc}\"\n\n" if dry_run || show_status
         load rc
         break
     end
