@@ -5,7 +5,7 @@
 #
 # https://github.com/zophos/ip_lockout
 #
-# Time-stamp: <2017-08-03 08:37:51 zophos>
+# Time-stamp: <2017-08-10 19:26:14 zophos>
 #
 # Copyright (c) 2017, NISHI, Takao <zophos@koka-in.org>
 # All rights reserved.
@@ -396,10 +396,12 @@ class Blocker
             else
                 h=@hosts.delete(addr)
                 sn=self.subnet(h)
-                if(sn.hosts.size<=1)
-                    @subnets.delete(sn.addr)
-                else
-                    sn.remove_host(h)
+                if(sn)
+                    if(sn.hosts.size<=1)
+                        @subnets.delete(sn.addr)
+                    else
+                        sn.remove_host(h)
+                    end
                 end
             end
         end
@@ -411,7 +413,7 @@ class Blocker
                      x
                  end
             p_addr=addr.mask(AGGREGATE_MASK)
-            @subnets[p_addr] unless addr==p_addr
+            @subnets[p_addr] unless addr.cidr_mask==p_addr.cidr_mask
         end
 
         def descript(port=$stdout)
